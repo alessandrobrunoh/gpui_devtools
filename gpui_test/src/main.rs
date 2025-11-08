@@ -69,7 +69,7 @@ fn main() {
                 cx.new(|cx| Root::new(view.into(), window, cx))
             })?;
 
-            let inspector_options = WindowOptions {
+            let inspector_options = gpui::WindowOptions {
                 window_bounds: Some(gpui::WindowBounds::Windowed(Bounds {
                     origin: Point { x: px(0.0), y: px(0.0) },
                     size: Size { width: px(400.0), height: px(600.0) },
