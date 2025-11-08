@@ -3,7 +3,7 @@ use gpui::{
     WindowOptions,
 };
 use gpui_component::{button::*, Root};
-use gpui_inspector::inspector;
+use gpui_inspector::{auto_inspector, inspector_main};
 use gpui_inspector::inspector_view::InspectorView;
 
 mod text;
@@ -13,10 +13,11 @@ struct MainView {
     text: SharedString,
 }
 
-#[inspector]
+#[auto_inspector]
 impl Render for MainView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div()
+
             .flex()
             .flex_col()
             .gap_3()
@@ -51,6 +52,7 @@ impl Render for MainView {
     }
 }
 
+#[inspector_main]
 fn main() {
     let app = Application::new();
 
@@ -67,11 +69,13 @@ fn main() {
                 cx.new(|cx| Root::new(view.into(), window, cx))
             })?;
 
-            let mut inspector_options = WindowOptions::default();
-            inspector_options.window_bounds = Some(gpui::WindowBounds::Windowed(Bounds {
-                origin: Point { x: px(0.0), y: px(0.0) },
-                size: Size { width: px(400.0), height: px(600.0) },
-            }));
+            let inspector_options = WindowOptions {
+                window_bounds: Some(gpui::WindowBounds::Windowed(Bounds {
+                    origin: Point { x: px(0.0), y: px(0.0) },
+                    size: Size { width: px(400.0), height: px(600.0) },
+                })),
+                ..Default::default()
+            };
             cx.open_window(inspector_options, |_, cx| {
                 cx.new(InspectorView::new)
             })?;

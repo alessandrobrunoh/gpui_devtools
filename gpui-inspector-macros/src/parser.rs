@@ -69,7 +69,7 @@ pub fn generate_element_node_code(expr: &Expr, id_counter: &mut u64) -> (TokenSt
                 let mut #node_var = gpui_inspector::tree::ElementNode {
                     id: #current_id,
                     name: #name.to_string(),
-                    properties: std::collections::HashMap::new(),
+                    properties: std::collections::BTreeMap::new(),
                     children: Vec::new(),
                 };
             };
@@ -105,7 +105,7 @@ pub fn generate_element_node_code(expr: &Expr, id_counter: &mut u64) -> (TokenSt
                 let mut #node_var = gpui_inspector::tree::ElementNode {
                     id: #current_id,
                     name: #name.to_string(),
-                    properties: std::collections::HashMap::new(),
+                    properties: std::collections::BTreeMap::new(),
                     children: Vec::new(),
                 };
             };

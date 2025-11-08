@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RenderedNode {
@@ -11,6 +11,6 @@ pub struct RenderedNode {
 pub struct ElementNode {
     pub id: u64,
     pub name: String,
-    pub properties: HashMap<String, String>,
+    pub properties: BTreeMap<String, String>,
     pub children: Vec<ElementNode>,
 }

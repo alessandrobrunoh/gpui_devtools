@@ -1,6 +1,5 @@
 use gpui::{div, prelude::*, App, ElementId, IntoElement, RenderOnce, SharedString, Window};
-
-use crate::inspector;
+use gpui_inspector::auto_inspector;
 
 #[derive(IntoElement)]
 pub struct Text {
@@ -22,7 +21,7 @@ impl Text {
     }
 }
 
-#[inspector]
+#[auto_inspector]
 impl RenderOnce for Text {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         div().child(self.label.unwrap_or_default())
