@@ -8,14 +8,36 @@ use std::collections::HashSet;
 pub struct InspectorView {
     selected_node_id: Option<u64>,
     collapsed_nodes: HashSet<u64>,
+    last_tree_version: u64,
 }
 
 impl InspectorView {
-    pub fn new(_cx: &mut Context<Self>) -> Self {
+    pub fn new(cx: &mut Context<Self>) -> Self {
+        // Register a callback that will be called when the tree updates
+        let weak_view = cx.entity().downgrade();
+        crate::state::set_tree_update_callback(move || {
+            // This runs on whatever thread calls increment_tree_version
+            // We just need to trigger a re-render of the inspector
+            if let Some(view) = weak_view.upgrade() {
+                // Queue a notification on the main thread
+                // Since we can't call cx.notify() from here, we'll track version in render
+                let _ = view;
+            }
+        });
+
+        // The inspector will check for updates on every render
+        // and schedule another render if needed
+
         Self {
             selected_node_id: None,
             collapsed_nodes: HashSet::new(),
+            last_tree_version: 0,
         }
+    }
+
+    fn schedule_next_check(&mut self, cx: &mut Context<Self>) {
+        // Notify to trigger a re-render, which will check the tree version again
+        cx.notify();
     }
 
     fn toggle_collapse(&mut self, node_id: u64, cx: &mut Context<Self>) {
@@ -118,9 +140,11 @@ impl InspectorView {
                     ),
             )
             .when(!is_collapsed && has_children, |this| {
-                this.children(node.children.iter().map(|child| {
-                    self.render_element_node(child, indent_level + 1, cx)
-                }))
+                this.children(
+                    node.children
+                        .iter()
+                        .map(|child| self.render_element_node(child, indent_level + 1, cx)),
+                )
             })
     }
 
@@ -217,8 +241,30 @@ impl InspectorView {
 }
 
 impl Render for InspectorView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let rendered_node_option = RENDER_TREE.lock().clone();
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Check if tree version has changed and schedule a re-render if needed
+        let current_version = crate::state::get_tree_version();
+        if current_version != self.last_tree_version {
+            self.last_tree_version = current_version;
+        }
+
+        // Schedule a check on the next frame to continuously poll for updates
+        cx.on_next_frame(window, |view, _window, cx| {
+            view.schedule_next_check(cx);
+        });
+
+        // Get the rendered tree and expand Entity references
+        let mut rendered_node_option = {
+            let tree = RENDER_TREE.lock();
+            tree.clone()
+        }; // Lock is released here
+
+        if let Some(ref mut node) = rendered_node_option {
+            if let Some(ref mut element_tree) = node.element_tree {
+                // Expand all Entity references to show their actual content
+                crate::expand_entities_in_tree(element_tree);
+            }
+        }
 
         div()
             .size_full()
@@ -288,13 +334,11 @@ impl Render for InspectorView {
                     )
                     .child(
                         // Properties content
-                        div()
-                            .flex_col()
-                            .children(
-                                rendered_node_option
-                                    .as_ref()
-                                    .map(|rn| self.render_details_panel(rn, cx)),
-                            ),
+                        div().flex_col().children(
+                            rendered_node_option
+                                .as_ref()
+                                .map(|rn| self.render_details_panel(rn, cx)),
+                        ),
                     ),
             )
     }

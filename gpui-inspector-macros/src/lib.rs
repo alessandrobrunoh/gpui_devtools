@@ -39,39 +39,35 @@ pub fn inspector(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     "Unknown".to_string()
                 };
 
-                // Generate code to construct the RenderedNode
                 let rendered_node_construction_code =
                     parser::generate_rendered_node_code(&type_name, original_method_body);
 
-                let new_body = quote! {
-                    {
-                        let result = #original_method_body; // Execute original render method
+                // Transform the body to add inspection code before the return
+                let mut new_stmts = original_method_body.stmts.clone();
 
-                        // Check if this view is registered for inspection
-                        let __view_id = {
-                            // Try to get entity_id if available in context
-                            // For now, always capture for registered types
-                            let __type_name = #type_name;
-                            __type_name
-                        };
-
+                // Insert inspection code before the last statement (which is the return expression)
+                if !new_stmts.is_empty() {
+                    let inspection_code = quote! {
                         // Always capture render tree for inspection
                         let __rendered_node = {
                             #rendered_node_construction_code
                         };
                         gpui_inspector::set_rendered_tree(__rendered_node.clone());
                         gpui_inspector::print_rendered_node_to_console(&__rendered_node);
+                    };
 
-                        result
-                    }
+                    // Parse the inspection code as a statement
+                    let inspection_stmt: syn::Stmt = syn::parse2(inspection_code).unwrap();
+
+                    // Insert before the last statement (the return expression)
+                    new_stmts.insert(new_stmts.len() - 1, inspection_stmt);
+                }
+
+                let new_body = syn::Block {
+                    brace_token: original_method_body.brace_token,
+                    stmts: new_stmts,
                 };
-                let new_body_str = new_body.to_string();
-                method.block = syn::parse2(new_body).unwrap_or_else(|e| {
-                    panic!(
-                        "Failed to parse generated code: {}\nGenerated code:\n{}",
-                        e, new_body_str
-                    );
-                });
+                method.block = new_body;
             }
         }
     }
@@ -144,30 +140,38 @@ pub fn auto_inspector(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 let rendered_node_construction_code =
                     parser::generate_rendered_node_code(&type_name, original_method_body);
 
-                let new_body = quote! {
-                    {
-                        let result = #original_method_body;
+                // Transform the body to add inspection code before the return
+                let mut new_stmts = original_method_body.stmts.clone();
 
-                        // Only capture if auto-inspection is enabled and this is the target view
-                        if gpui_inspector::hooks::is_auto_inspection_enabled()
-                            && gpui_inspector::hooks::should_capture_type(#type_name) {
+                // Insert inspection code before the last statement (which is the return expression)
+                if !new_stmts.is_empty() {
+                    let inspection_code = quote! {
+                        // Only capture if auto-inspection is enabled
+                        if gpui_inspector::hooks::is_auto_inspection_enabled() {
                             let __rendered_node = {
                                 #rendered_node_construction_code
                             };
+
+                            // Always save to ALL_TREES so entity expansion can work
                             gpui_inspector::set_rendered_tree(__rendered_node.clone());
+
+                            // But always print to console for debugging
                             gpui_inspector::print_rendered_node_to_console(&__rendered_node);
                         }
+                    };
 
-                        result
-                    }
+                    // Parse the inspection code as a statement
+                    let inspection_stmt: syn::Stmt = syn::parse2(inspection_code).unwrap();
+
+                    // Insert before the last statement (the return expression)
+                    new_stmts.insert(new_stmts.len() - 1, inspection_stmt);
+                }
+
+                let new_body = syn::Block {
+                    brace_token: original_method_body.brace_token,
+                    stmts: new_stmts,
                 };
-                let new_body_str = new_body.to_string();
-                method.block = syn::parse2(new_body).unwrap_or_else(|e| {
-                    panic!(
-                        "Failed to parse generated code: {}\nGenerated code:\n{}",
-                        e, new_body_str
-                    );
-                });
+                method.block = new_body;
             }
         }
     }

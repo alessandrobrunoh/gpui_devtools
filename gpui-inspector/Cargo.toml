@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-gpui = "*"
+gpui = "0.2"
 once_cell = "1.19"
 parking_lot = "0.12"
 gpui-inspector-macros = { path = "../gpui-inspector-macros" }

@@ -1,54 +1,116 @@
 use gpui::{
-    div, prelude::*, px, rgb, Application, Bounds, Context, Point, SharedString, Size, Window,
-    WindowOptions,
+    div, prelude::*, px, rgb, App, Application, Bounds, Context, Entity, FocusHandle, Focusable,
+    Point, Size, Window, WindowOptions,
 };
-use gpui_component::{button::*, Root};
-use gpui_inspector::{auto_inspector, inspector_main};
+use gpui_component::button::ButtonVariants;
+use gpui_component::Root;
 use gpui_inspector::inspector_view::InspectorView;
+use gpui_inspector::{auto_inspector, inspector_main};
 
+use navbar::Navbar;
+use tab1::Tab1;
+use tab2::Tab2;
+
+mod navbar;
+mod tab1;
+mod tab2;
 mod text;
-use text::Text;
+
+enum TabMode {
+    Tab1,
+    Tab2,
+}
 
 struct MainView {
-    text: SharedString,
+    mode: TabMode,
+    focus_handle: FocusHandle,
+    tab1_view: Entity<Tab1>,
+    tab2_view: Entity<Tab2>,
+}
+
+impl MainView {
+    fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let focus_handle = cx.focus_handle();
+        let tab1_view = cx.new(|_| Tab1::new());
+        let tab2_view = cx.new(|_| Tab2::new());
+        Self {
+            mode: TabMode::Tab1,
+            focus_handle,
+            tab1_view,
+            tab2_view,
+        }
+    }
+
+    fn switch_to_tab1(&mut self, cx: &mut Context<Self>) {
+        if matches!(self.mode, TabMode::Tab1) {
+            return;
+        }
+        self.mode = TabMode::Tab1;
+        cx.notify();
+    }
+
+    fn switch_to_tab2(&mut self, cx: &mut Context<Self>) {
+        if matches!(self.mode, TabMode::Tab2) {
+            return;
+        }
+        self.mode = TabMode::Tab2;
+        cx.notify();
+    }
+}
+
+impl Focusable for MainView {
+    fn focus_handle(&self, _cx: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
 }
 
 #[auto_inspector]
 impl Render for MainView {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let active_tab = match self.mode {
+            TabMode::Tab1 => 1,
+            TabMode::Tab2 => 2,
+        };
 
+        div()
             .flex()
             .flex_col()
             .gap_3()
             .bg(rgb(0x505050))
-            .size(px(500.0))
-            .justify_center()
-            .items_center()
-            .shadow_lg()
-            .border_1()
-            .border_color(rgb(0x0000ff))
+            .size_full()
             .text_xl()
             .text_color(rgb(0xffffff))
-            .child(format!("Hello, {}!", &self.text))
             .child(
-                Button::new("ok")
-                    .primary()
-                    .label("Let's Go!")
-                    .on_click(|_, _, _| println!("Clicked!")),
+                Navbar::new("main-navbar", active_tab)
+                    .tab_button(
+                        gpui_component::button::Button::new("tab1")
+                            .when(active_tab == 1, |btn| btn.primary())
+                            .label("Tab 1")
+                            .on_click(cx.listener(|this, _, _, cx| this.switch_to_tab1(cx)))
+                            .into_any_element(),
+                    )
+                    .tab_button(
+                        gpui_component::button::Button::new("tab2")
+                            .when(active_tab == 2, |btn| btn.primary())
+                            .label("Tab 2")
+                            .on_click(cx.listener(|this, _, _, cx| this.switch_to_tab2(cx)))
+                            .into_any_element(),
+                    ),
             )
-            .child(
-                div()
+            .child(match self.mode {
+                TabMode::Tab1 => div()
                     .flex()
-                    .gap_2()
-                    .child(div().size_8().bg(gpui::red()))
-                    .child(div().size_8().bg(gpui::green()))
-                    .child(div().size_8().bg(gpui::blue()))
-                    .child(div().size_8().bg(gpui::yellow()))
-                    .child(div().size_8().bg(gpui::black()))
-                    .child(div().size_8().bg(gpui::white())),
-            )
-            .child(Text::new("hello-worldo").label("Hello World2"))
+                    .flex_1()
+                    .items_center()
+                    .justify_center()
+                    .child(self.tab1_view.clone()),
+                TabMode::Tab2 => div()
+                    .flex()
+                    .flex_1()
+                    .items_center()
+                    .justify_center()
+                    .child(self.tab2_view.clone()),
+            })
     }
 }
 
@@ -62,23 +124,25 @@ fn main() {
 
         cx.spawn(async move |cx| {
             cx.open_window(WindowOptions::default(), |window, cx| {
-                let view = cx.new(|_| MainView {
-                    text: "World".into(),
-                });
+                let view = cx.new(|cx| MainView::new(window, cx));
                 // This first level on the window, should be a Root.
                 cx.new(|cx| Root::new(view.into(), window, cx))
             })?;
 
             let inspector_options = gpui::WindowOptions {
                 window_bounds: Some(gpui::WindowBounds::Windowed(Bounds {
-                    origin: Point { x: px(0.0), y: px(0.0) },
-                    size: Size { width: px(400.0), height: px(600.0) },
+                    origin: Point {
+                        x: px(0.0),
+                        y: px(0.0),
+                    },
+                    size: Size {
+                        width: px(400.0),
+                        height: px(600.0),
+                    },
                 })),
                 ..Default::default()
             };
-            cx.open_window(inspector_options, |_, cx| {
-                cx.new(InspectorView::new)
-            })?;
+            cx.open_window(inspector_options, |_, cx| cx.new(InspectorView::new))?;
 
             Ok::<_, anyhow::Error>(())
         })

@@ -50,7 +50,7 @@ struct Button {
     label: SharedString,
 }
 
-#[auto_inspector]
+// #[auto_inspector]
 impl RenderOnce for Button {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         div()
