@@ -18,7 +18,6 @@ impl Tab2 {
 
     fn toggle_state(&mut self, cx: &mut Context<Self>) {
         self.state = !self.state;
-        // cx.notify();
     }
 }
 

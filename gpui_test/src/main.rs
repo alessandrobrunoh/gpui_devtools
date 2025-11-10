@@ -46,7 +46,6 @@ impl MainView {
             return;
         }
         self.mode = TabMode::Tab1;
-        cx.notify();
     }
 
     fn switch_to_tab2(&mut self, cx: &mut Context<Self>) {
@@ -54,7 +53,6 @@ impl MainView {
             return;
         }
         self.mode = TabMode::Tab2;
-        cx.notify();
     }
 }
 

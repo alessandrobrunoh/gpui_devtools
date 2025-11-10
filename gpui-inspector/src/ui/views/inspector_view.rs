@@ -1,8 +1,6 @@
-use crate::state::RENDER_TREE;
-use crate::tree::{ElementNode, RenderedNode};
-use gpui::{
-    div, prelude::*, px, rgb, Context, IntoElement, MouseButton, ParentElement, Render, Window,
-};
+use crate::core::{ElementNode, RenderedNode, RENDER_TREE};
+use crate::ui::theme::InspectorTheme;
+use gpui::{div, prelude::*, px, Context, IntoElement, MouseButton, ParentElement, Render, Window};
 use std::collections::HashSet;
 
 pub struct InspectorView {
@@ -15,7 +13,7 @@ impl InspectorView {
     pub fn new(cx: &mut Context<Self>) -> Self {
         // Register a callback that will be called when the tree updates
         let weak_view = cx.entity().downgrade();
-        crate::state::set_tree_update_callback(move || {
+        crate::core::set_tree_update_callback(move || {
             // This runs on whatever thread calls increment_tree_version
             // We just need to trigger a re-render of the inspector
             if let Some(view) = weak_view.upgrade() {
@@ -62,17 +60,16 @@ impl InspectorView {
         let node_id = node.id;
         let name = node.name.clone();
 
-        // Zed colors
         let row_bg = if is_selected {
-            rgb(0x2b4f6a) // Zed blue selection
+            InspectorTheme::bg_selected()
         } else {
-            rgb(0x282c34) // Dark background
+            InspectorTheme::bg_primary()
         };
 
         let hover_bg = if is_selected {
-            rgb(0x2b4f6a)
+            InspectorTheme::bg_selected()
         } else {
-            rgb(0x2f3440)
+            InspectorTheme::bg_hover()
         };
 
         div()
@@ -114,7 +111,7 @@ impl InspectorView {
                                 .child(
                                     div()
                                         .text_xs()
-                                        .text_color(rgb(0x8a8f98))
+                                        .text_color(InspectorTheme::text_secondary())
                                         .child(if is_collapsed { "▶" } else { "▼" }),
                                 )
                             }),
@@ -124,7 +121,7 @@ impl InspectorView {
                         div()
                             .mr(px(8.0))
                             .text_sm()
-                            .text_color(rgb(0x61afef)) // Zed blue for icons
+                            .text_color(InspectorTheme::accent_blue())
                             .child("⬡"),
                     )
                     .child(
@@ -132,9 +129,9 @@ impl InspectorView {
                         div()
                             .text_sm()
                             .text_color(if is_selected {
-                                rgb(0xe5e9f0)
+                                InspectorTheme::text_highlight()
                             } else {
-                                rgb(0xabb2bf)
+                                InspectorTheme::text_primary()
                             })
                             .child(name),
                     ),
@@ -171,7 +168,7 @@ impl InspectorView {
                         .text_base()
                         .font_weight(gpui::FontWeight::SEMIBOLD)
                         .mb_2()
-                        .text_color(rgb(0xe5e9f0))
+                        .text_color(InspectorTheme::text_highlight())
                         .child(if let Some(node) = selected_element.as_ref() {
                             node.name.clone()
                         } else {
@@ -189,7 +186,7 @@ impl InspectorView {
                             if node.properties.is_empty() {
                                 div()
                                     .text_sm()
-                                    .text_color(rgb(0x5c6370))
+                                    .text_color(InspectorTheme::text_muted())
                                     .italic()
                                     .child("No properties")
                             } else {
@@ -202,24 +199,24 @@ impl InspectorView {
                                             .px_2()
                                             .py_1()
                                             .rounded_sm()
-                                            .hover(|style| style.bg(rgb(0x2f3440)))
+                                            .hover(|style| style.bg(InspectorTheme::bg_hover()))
                                             .child(
                                                 div()
                                                     .text_sm()
-                                                    .text_color(rgb(0xc678dd)) // Zed purple for keys
+                                                    .text_color(InspectorTheme::accent_purple()) // Zed purple for keys
                                                     .font_weight(gpui::FontWeight::MEDIUM)
                                                     .child(format!("{}", key)),
                                             )
                                             .child(
                                                 div()
                                                     .text_sm()
-                                                    .text_color(rgb(0x5c6370))
+                                                    .text_color(InspectorTheme::text_muted())
                                                     .child(":"),
                                             )
                                             .child(
                                                 div()
                                                     .text_sm()
-                                                    .text_color(rgb(0x98c379)) // Zed green for values
+                                                    .text_color(InspectorTheme::accent_green()) // Zed green for values
                                                     .child(value.clone()),
                                             )
                                     }),
@@ -232,7 +229,7 @@ impl InspectorView {
                 this.child(
                     div()
                         .text_sm()
-                        .text_color(rgb(0x5c6370))
+                        .text_color(InspectorTheme::text_muted())
                         .italic()
                         .child("Select an element to view properties"),
                 )
@@ -243,7 +240,7 @@ impl InspectorView {
 impl Render for InspectorView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Check if tree version has changed and schedule a re-render if needed
-        let current_version = crate::state::get_tree_version();
+        let current_version = crate::core::get_tree_version();
         if current_version != self.last_tree_version {
             self.last_tree_version = current_version;
         }
@@ -268,8 +265,8 @@ impl Render for InspectorView {
 
         div()
             .size_full()
-            .bg(rgb(0x282c34)) // Zed dark background
-            .text_color(rgb(0xabb2bf))
+            .bg(InspectorTheme::bg_primary()) // Zed dark background
+            .text_color(InspectorTheme::text_primary())
             .flex()
             .child(
                 // Left panel: Element Tree
@@ -278,7 +275,7 @@ impl Render for InspectorView {
                     .w_1_2()
                     .h_full()
                     .border_r_1()
-                    .border_color(rgb(0x181a1f))
+                    .border_color(InspectorTheme::border())
                     .child(
                         // Header
                         div()
@@ -287,13 +284,13 @@ impl Render for InspectorView {
                             .h(px(32.0))
                             .px_3()
                             .border_b_1()
-                            .border_color(rgb(0x181a1f))
-                            .bg(rgb(0x21252b))
+                            .border_color(InspectorTheme::border())
+                            .bg(InspectorTheme::bg_secondary())
                             .child(
                                 div()
                                     .text_xs()
                                     .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .text_color(rgb(0x8a8f98))
+                                    .text_color(InspectorTheme::text_secondary())
                                     .child("ELEMENT TREE"),
                             ),
                     )
@@ -322,13 +319,13 @@ impl Render for InspectorView {
                             .h(px(32.0))
                             .px_3()
                             .border_b_1()
-                            .border_color(rgb(0x181a1f))
-                            .bg(rgb(0x21252b))
+                            .border_color(InspectorTheme::border())
+                            .bg(InspectorTheme::bg_secondary())
                             .child(
                                 div()
                                     .text_xs()
                                     .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .text_color(rgb(0x8a8f98))
+                                    .text_color(InspectorTheme::text_secondary())
                                     .child("PROPERTIES"),
                             ),
                     )

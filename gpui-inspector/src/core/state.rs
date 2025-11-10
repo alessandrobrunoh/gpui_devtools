@@ -1,4 +1,4 @@
-use crate::tree::RenderedNode;
+use crate::core::tree::RenderedNode;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::collections::HashMap;
