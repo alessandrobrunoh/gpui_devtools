@@ -2,6 +2,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, ItemFn, ItemImpl};
 
+mod instrumenter;
 mod parser;
 mod rewriter;
 
@@ -43,26 +44,30 @@ pub fn inspector(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 let rendered_node_construction_code =
                     parser::generate_rendered_node_code(&type_name, original_method_body);
 
-                let new_body = quote! {
-                    {
-                        let result = #original_method_body; // Execute original render method
+                let new_body = if is_render_once {
+                    quote! {
+                        {
+                            let __rendered_node = {
+                                #rendered_node_construction_code
+                            };
+                            gpui_inspector::set_rendered_tree(__rendered_node);
 
-                        // Check if this view is registered for inspection
-                        let __view_id = {
-                            // Try to get entity_id if available in context
-                            // For now, always capture for registered types
-                            let __type_name = #type_name;
-                            __type_name
-                        };
+                            #original_method_body
+                        }
+                    }
+                } else {
+                    quote! {
+                        {
+                            let result = #original_method_body; 
 
-                        // Always capture render tree for inspection
-                        let __rendered_node = {
-                            #rendered_node_construction_code
-                        };
-                        gpui_inspector::set_rendered_tree(__rendered_node.clone());
-                        gpui_inspector::print_rendered_node_to_console(&__rendered_node);
+                            // Capture render tree for inspection
+                            let __rendered_node = {
+                                #rendered_node_construction_code
+                            };
+                            gpui_inspector::set_rendered_tree(__rendered_node);
 
-                        result
+                            result
+                        }
                     }
                 };
                 let new_body_str = new_body.to_string();
@@ -106,68 +111,50 @@ pub fn inspector_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     .into()
 }
 
-/// Auto-inspector macro that applies inspector behavior when auto-inspection is enabled
-/// Use this instead of #[inspector] when using #[inspector_main]
 #[proc_macro_attribute]
 pub fn auto_inspector(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemImpl);
 
-    let trait_path = match &input.trait_ {
-        Some((_, path, _)) => path,
-        None => return quote! { #input }.into(),
-    };
-
-    let is_render = trait_path.segments.iter().any(|s| s.ident == "Render");
-    let is_render_once = trait_path.segments.iter().any(|s| s.ident == "RenderOnce");
-
-    if !is_render && !is_render_once {
-        return quote! { #input }.into();
-    }
-
     let mut output = input.clone();
+    
+    let type_name = if let syn::Type::Path(type_path) = &*output.self_ty {
+        let segments = &type_path.path.segments;
+        if let Some(last_segment) = segments.last() {
+            last_segment.ident.to_string()
+        } else {
+            "Unknown".to_string()
+        }
+    } else {
+        "Unknown".to_string()
+    };
 
     for item in &mut output.items {
         if let syn::ImplItem::Fn(method) = item {
-            if method.sig.ident == "render" {
-                let original_method_body = &method.block;
-                let type_name = if let syn::Type::Path(type_path) = &*output.self_ty {
-                    let segments = &type_path.path.segments;
-                    if let Some(last_segment) = segments.last() {
-                        last_segment.ident.to_string()
-                    } else {
-                        "Unknown".to_string()
-                    }
-                } else {
-                    "Unknown".to_string()
-                };
-
-                let rendered_node_construction_code =
-                    parser::generate_rendered_node_code(&type_name, original_method_body);
-
+            let method_name = method.sig.ident.to_string();
+            let original_body = &method.block;
+            
+            // Instrument the body
+            let instrumented_body = instrumenter::instrument_block(original_body);
+            
+            if method_name == "render" {
                 let new_body = quote! {
                     {
-                        let result = #original_method_body;
-
-                        // Only capture if auto-inspection is enabled and this is the target view
                         if gpui_inspector::hooks::is_auto_inspection_enabled()
                             && gpui_inspector::hooks::should_capture_type(#type_name) {
-                            let __rendered_node = {
-                                #rendered_node_construction_code
-                            };
-                            gpui_inspector::set_rendered_tree(__rendered_node.clone());
-                            gpui_inspector::print_rendered_node_to_console(&__rendered_node);
+                            gpui_inspector::builder_start();
+                            let __res = #instrumented_body;
+                            gpui_inspector::builder_finish(#type_name);
+                            __res
+                        } else {
+                            #original_body
                         }
-
-                        result
                     }
                 };
-                let new_body_str = new_body.to_string();
-                method.block = syn::parse2(new_body).unwrap_or_else(|e| {
-                    panic!(
-                        "Failed to parse generated code: {}\nGenerated code:\n{}",
-                        e, new_body_str
-                    );
-                });
+                method.block = syn::parse2(new_body).unwrap();
+            } else {
+                // For other methods, we just instrument them so they add to the builder
+                // if it's already running.
+                method.block = instrumented_body;
             }
         }
     }

@@ -20,11 +20,11 @@ pub fn generate_element_node_code(expr: &Expr, id_counter: &mut u64) -> (TokenSt
 
             generated_code = quote! {
                 #receiver_code
-                let mut #node_var = #receiver_var; // Start with the receiver node
+                let mut #node_var = #receiver_var; 
             };
 
-            if method_name_str == "child" {
-                if let Some(arg) = method_call.args.first() {
+            if method_name_str == "child" || method_name_str == "children" {
+                for arg in &method_call.args {
                     let (child_code, child_var) = generate_element_node_code(arg, id_counter);
                     generated_code = quote! {
                         #generated_code
@@ -32,47 +32,96 @@ pub fn generate_element_node_code(expr: &Expr, id_counter: &mut u64) -> (TokenSt
                         #node_var.children.push(#child_var);
                     };
                 }
+            } else if method_name_str == "id" {
+                if let Some(arg) = method_call.args.first() {
+                    let arg_str = arg.to_token_stream().to_string().replace("\"", "");
+                    generated_code = quote! {
+                        #generated_code
+                        #node_var.global_element_id = Some(#arg_str.to_string());
+                        let __source_location = format!("{}:{}", file!(), line!());
+                        #node_var.global_element_path = Some(__source_location.clone());
+                        gpui_inspector::hooks::register_element_with_gpui(#current_id, #arg_str.to_string());
+                        gpui_inspector::hooks::register_element_path_with_gpui(#current_id, __source_location);
+                    };
+                }
+            } else if method_name_str == "when" || method_name_str == "when_some" {
+                // For 'when', the last argument is the closure that modifies the element
+                if let Some(last_arg) = method_call.args.last() {
+                    if let Expr::Closure(closure) = last_arg {
+                        // We can't easily execute the closure at compile time,
+                        // but we can try to parse its body if it's a simple expression
+                        let _closure_body = &closure.body;
+                        // For now, just mark it in properties
+                        generated_code = quote! {
+                            #generated_code
+                            #node_var.properties.insert(stringify!(#method_name).to_string(), "conditional".to_string());
+                        };
+                    }
+                }
             } else {
-                let args_str = if method_call.args.is_empty() {
-                    quote! { "".to_string() }
-                } else {
-                    let args_code: Vec<_> = method_call
-                        .args
-                        .iter()
-                        .map(|arg| {
-                            if let Expr::Lit(syn::ExprLit {
-                                lit: syn::Lit::Str(lit_str),
-                                ..
-                            }) = arg
+                let method_name_str = method_name.to_string();
+                let args_code: Vec<_> = method_call
+                    .args
+                    .iter()
+                    .map(|arg| {
+                        quote! {
                             {
-                                quote! { #lit_str.to_string() }
-                            } else if matches!(arg, Expr::Closure(_)) {
-                                quote! { "<closure>".to_string() }
-                            } else {
-                                let arg_str = arg.to_token_stream().to_string();
-                                quote! { #arg_str.to_string() }
+                                use gpui_inspector::tree::Inspectable;
+                                (&#arg).inspect()
                             }
-                        })
-                        .collect();
-                    quote! { vec![#(#args_code),*].join(", ") }
-                };
+                        }
+                    })
+                    .collect();
+
                 generated_code = quote! {
                     #generated_code
-                    #node_var.properties.insert(stringify!(#method_name).to_string(), #args_str);
+                    let __args = vec![#(#args_code),*];
+                    #node_var.properties.insert(#method_name_str.to_string(), __args.join(", "));
                 };
             }
             (generated_code, node_var)
         }
         Expr::Call(call) => {
             let name = call.func.to_token_stream().to_string();
+            let mut global_id = None;
+            
+            // Special handling for Button::new("id")
+            if name.contains("Button :: new") || name == "Button::new" {
+                if let Some(arg) = call.args.first() {
+                    global_id = Some(arg.to_token_stream().to_string().replace("\"", ""));
+                }
+            }
+
+            let global_id_code = if let Some(id) = global_id {
+                quote! { Some(#id.to_string()) }
+            } else {
+                quote! { None }
+            };
+
             generated_code = quote! {
                 let mut #node_var = gpui_inspector::tree::ElementNode {
                     id: #current_id,
                     name: #name.to_string(),
                     properties: std::collections::BTreeMap::new(),
                     children: Vec::new(),
+                    global_element_id: #global_id_code,
+                    global_element_path: None,
                 };
             };
+            
+            if name.contains("Button :: new") || name == "Button::new" {
+                if let Some(arg) = call.args.first() {
+                    let gid = arg.to_token_stream().to_string().replace("\"", "");
+                    generated_code = quote! {
+                        #generated_code
+                        let __source_location = format!("{}:{}", file!(), line!());
+                        #node_var.global_element_path = Some(__source_location.clone());
+                        gpui_inspector::hooks::register_element_with_gpui(#current_id, #gid.to_string());
+                        gpui_inspector::hooks::register_element_path_with_gpui(#current_id, __source_location);
+                    };
+                }
+            }
+
             if !call.args.is_empty() {
                 let args_code: Vec<_> = call
                     .args
@@ -107,6 +156,8 @@ pub fn generate_element_node_code(expr: &Expr, id_counter: &mut u64) -> (TokenSt
                     name: #name.to_string(),
                     properties: std::collections::BTreeMap::new(),
                     children: Vec::new(),
+                    global_element_id: None,
+                    global_element_path: None,
                 };
             };
             (generated_code, node_var)
@@ -132,8 +183,10 @@ pub fn generate_rendered_node_code(component_name: &str, body: &Block) -> TokenS
     if is_empty {
         quote! {
             let __rendered_node = gpui_inspector::tree::RenderedNode {
+                version: 0,
                 component_name: #component_name_lit.to_string(),
                 element_tree: None,
+                gpui_element_ids: std::collections::HashMap::new(),
             };
             __rendered_node
         }
@@ -141,8 +194,10 @@ pub fn generate_rendered_node_code(component_name: &str, body: &Block) -> TokenS
         quote! {
             #element_tree_setup_code
             let __rendered_node = gpui_inspector::tree::RenderedNode {
+                version: 0,
                 component_name: #component_name_lit.to_string(),
                 element_tree: Some(#element_tree_var),
+                gpui_element_ids: std::collections::HashMap::new(),
             };
             __rendered_node
         }
