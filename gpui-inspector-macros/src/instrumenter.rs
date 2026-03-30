@@ -87,24 +87,36 @@ fn instrument_chain(root: ExprCall, methods: Vec<ExprMethodCall>) -> Expr {
             let args: Vec<Expr> = m.args.iter().map(|arg| {
                 let instrumented_arg = instrument_expr(arg);
                 
-                let (should_wrap, wrap_name) = if let Some((c, _)) = analyze_chain(arg) {
-                    (false, get_root_name(&c))
-                } else if let Expr::Call(c) = arg {
-                    (false, get_root_name(c))
-                } else if is_control_flow(arg) {
-                    (false, "control_flow".to_string())
+                // Check if this is an element chain (div(), Button::new(), etc.)
+                let is_element_chain = analyze_chain(arg).is_some();
+                let is_element_call = if let Expr::Call(c) = arg {
+                    let name = get_root_name(c);
+                    // Common element constructors
+                    name.contains("div") || name.contains("Button") || name.contains("Label") || 
+                    name.contains("Icon") || name.contains("View") || name.contains("new")
                 } else {
-                    (true, "child".to_string())
+                    false
                 };
-
-                if should_wrap {
+                let is_control = is_control_flow(arg);
+                
+                // If it's NOT an element, capture it as text content
+                let is_text_content = !is_element_chain && !is_element_call && !is_control;
+                
+                if is_text_content {
+                    // Capture the value as "content" property
                     parse_quote! {
                         {
-                            gpui_inspector::builder_enter(#wrap_name);
+                            gpui_inspector::builder_enter("text");
                             let _guard = gpui_inspector::tree::NodeGuard;
-                            #instrumented_arg
+                            let __content = #instrumented_arg;
+                            #[allow(unused_imports)]
+                            use gpui_inspector::tree::InspectorDebugFallback;
+                            gpui_inspector::builder_prop("value", gpui_inspector::tree::InspectorDebugValue(&__content).inspect());
+                            __content
                         }
                     }
+                } else if is_control {
+                    instrumented_arg
                 } else {
                     instrumented_arg
                 }
